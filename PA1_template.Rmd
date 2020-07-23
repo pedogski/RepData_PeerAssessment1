@@ -1,25 +1,138 @@
 ---
 title: "Reproducible Research: Peer Assessment 1"
-output: 
+output: html_document
   html_document:
+  date: "7/23/2020"
     keep_md: true
 ---
 
 
 ## Loading and preprocessing the data
+rm(list = ls()) #remove all data store in the Data Environment
+
+#LOADING REQUIRED PACKAGES
+library(lubridate)
+library(ggplot2)
+library(reshape2)
+library(dplyr)
 
 
+## Loading and preprocessing the data Exploring the basics of this data
+activDT <- read.csv("activity.csv", header = TRUE)
+str(activDT)
+summary(activDT)
+
+#transforming the date column into date format using lubridate
+activDT$date <- ymd(activDT$date)
+length(unique(activDT$date))
 
 ## What is mean total number of steps taken per day?
 
+stpPaDy <- aggregate(activDT$steps, list(activDT$date), FUN = sum)
+colnames(stpPaDy) <- c("Date", "Steps")
+stpPaDy
+
+activDT_melt <- melt(activDT[which(!is.na(activDT$steps)), ], id.vars = c("date", "interval"))
+head(activDT_melt)
+sum_ofsteps <- dcast(activDT_melt, date ~ variable, sum)
+head(sum_ofsteps)
+summary(sum_ofsteps$steps) # Summary of data
+
+hist(sum_ofsteps$steps, main = "Histogram of total steps taken per day",
+     xlab = "Total steps per day", ylab = "Number of days",
+     breaks = 10 , col = "dark blue")
+abline(v = mean(sum_ofsteps$steps), lty = 2, lwd = 3, col = "green")
+abline(v = median(sum_ofsteps$steps), lty = 1, lwd = 2, col = "red")
+legend(x = "topright", c("Mean", "Median"), col = c("green", "red"),
+       lty = c(2, 1), lwd = c(3, 2))
+
+ sum_ofsteps$date <- as.Date(sum_ofsteps$date)
+     ggplot(sum_ofsteps, aes(date, steps)) + geom_line() + scale_x_date(date_labels = "%b %d") + ylab("Total number of steps")
+ ### Mean
+     mean(stpPaDy$Steps, na.rm = TRUE)
+ ### Median
+     median(stpPaDy$Steps, na.rm = TRUE)
 
 
 ## What is the average daily activity pattern?
+meanstpint <- dcast(activDT_melt, interval ~ variable, mean, na.rm = TRUE)
+head(meanstpint)
+
+meanstpint$time <- meanstpint$interval/100
+HTS <- ggplot(meanstpint, aes(time, steps))
+HTS + geom_line(col = "red") + ggtitle("Average steps per time interval") + xlab("Time") + ylab("Steps") + theme(plot.title = element_text(face = "bold", size = 10))
+
+The time interval during which the maximum number of steps is taken is
+maxstpint <- meanstpint$interval[which.max(meanstpint$steps)]
+maxstpint
+
+# 5-minute interval with the maximum number of steps
+ST <- tbl_df(meanstpint)
+# find the column
+ST %>% select(time, steps) %>% filter(steps == max(ST$steps))
+
 
 
 
 ## Imputing missing values
+# 1. Total number of missing values in the dataset
+TMV <- tbl_df(activDT)
+# find the column
+TMV %>% filter(is.na(steps)) %>% summarize(missing_values = n())
+
+## Impute missing values
+activDT2 <- split(activDT, activDT$interval)
+activDT2 <- lapply(activDT2, function(x) {
+  x$steps[which(is.na(x$steps))] <- mean(x$steps, na.rm = TRUE)
+  return(x)
+})
+activDT2 <- do.call("rbind", activDT2)
+row.names(activDT2) <- NULL
+activDT2 <- split(activDT2, activDT2$date)
+df <- lapply(activDT2, function(x) {
+  x$steps[which(is.na(x$steps))] <- mean(x$steps, na.rm = TRUE)
+  return(x)
+})
+activDT2 <- do.call("rbind", activDT2)
+row.names(activDT2) <- NULL
+head(activDT2) # check for conformation
+
+# HISTOGRAM WITH REPLACED MISSING DATA
+activDT2melt <- melt(activDT2, id.vars = c("date", "interval"))
+stepssum <- dcast(activDT2melt, date ~ variable, sum, na.rm = TRUE)
+head(stepssum)
+
+### Draw the histogram
+gfull <- ggplot(stepssum, aes(steps))
+gfull + geom_histogram(boundary = 0, binwidth = 2500, col = "darkgreen", fill = "lightblue") + ggtitle("Histogram of steps per day") + xlab("Steps") + ylab("Frequency") + theme(plot.title = element_text(face = "bold", size = 12)) + scale_x_continuous(breaks = seq(0,25000,2500)) + scale_y_continuous(breaks = seq(0,26,2))
+
+#Number of rows with NA values
+sum(is.na(activDT2$steps))
+sum(is.na(activDT2$steps))*100/nrow(activDT2)
+
+
+# Mean
+mean(stepssum$steps)
+
+#Median
+median(stepssum$steps)
 
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+#a.  Create variable with date in correct format
+activDT2$RealDate <- as.Date(activDT2$date, format = "%Y-%m-%d")
+# b. create a variable with weekdays name
+activDT2$weekday <- weekdays(activDT2$RealDate)
+# c. create a new variable indicating weekday or weekend
+activDT2$DayType <- ifelse(activDT2$weekday == 'Saturday' | activDT2$weekday == 'Sunday', 'weekend','weekday')
+
+ head(activDT2, n = 20)
+
+ StepsPerTimeDT <- aggregate(steps ~ interval + DayType, data = activDT2, FUN = mean, na.action = na.omit)
+
+ StepsPerTimeDT$time <- StepsPerTimeDT$interval/100
+
+ histj <- ggplot(StepsPerTimeDT, aes(time, steps))
+histj + geom_line(col = "magenta") + ggtitle("Average steps per time interval: weekdays vs. weekends") + xlab("Time") + ylab("Steps") + theme(plot.title = element_text(face = "bold", size = 12)) + facet_grid(DayType ~ .)
